@@ -51,14 +51,17 @@ import com.ericsson.otp.erlang.OtpErlangTuple;
 class ThreadMsgHandler implements Runnable {
     BlockingQueue<OtpErlangObject> queue;
     private final JavaErlang root;
+    private final ErlangTypeMapper typeMapper;
 
-    ThreadMsgHandler(final JavaErlang root) {
+    ThreadMsgHandler(final JavaErlang root, final ErlangTypeMapper typeMapper) {
         this.root = root;
+        this.typeMapper = typeMapper;
         queue = new LinkedBlockingQueue<OtpErlangObject>();
     }
 
     public static ThreadMsgHandler createThreadMsgHandler(final JavaErlang root) {
-        final ThreadMsgHandler th = new ThreadMsgHandler(root);
+        final ThreadMsgHandler th = new ThreadMsgHandler(root,
+                root.getTypeMapper());
         new Thread(th).start();
         return th;
     }
@@ -280,7 +283,7 @@ class ThreadMsgHandler implements Runnable {
 
     OtpErlangObject getFieldValue(final OtpErlangObject cmd) throws Exception {
         final OtpErlangTuple t = (OtpErlangTuple) cmd;
-        final Object obj = root.fromErlangMap.get(t.elementAt(0));
+        final Object obj = typeMapper.getFrom(t.elementAt(0));
         final Field field = root.get_field(t.elementAt(1));
         final Object result = field.get(obj);
         return root.map_to_erlang(result, field.getType());
@@ -288,7 +291,7 @@ class ThreadMsgHandler implements Runnable {
 
     OtpErlangObject setFieldValue(final OtpErlangObject cmd) throws Exception {
         final OtpErlangTuple t = (OtpErlangTuple) cmd;
-        final Object obj = root.fromErlangMap.get(t.elementAt(0));
+        final Object obj = typeMapper.getFrom(t.elementAt(0));
         final Field field = root.get_field(t.elementAt(1));
         final OtpErlangObject value = t.elementAt(2);
         field.set(obj, root.java_value_from_erlang(value, field.getType()));

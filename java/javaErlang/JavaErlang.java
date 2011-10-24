@@ -66,8 +66,6 @@ import com.ericsson.otp.erlang.OtpNode;
 
 @SuppressWarnings("rawtypes")
 public class JavaErlang {
-    volatile Map<RefEqualsObject, OtpErlangObject> toErlangMap;
-    volatile Map<OtpErlangObject, Object> fromErlangMap;
     volatile Map<Object, OtpErlangObject> accToErlangMap;
     volatile Map<OtpErlangObject, Object> accFromErlangMap;
     volatile Map<OtpErlangObject, ThreadMsgHandler> threadMap;
@@ -75,11 +73,13 @@ public class JavaErlang {
     volatile int accCounter = 0;
     volatile int threadCounter = 0;
 
+    private final ErlangTypeMapper typeMapper;
+
     volatile OtpMbox msgs;
     volatile OtpErlangObject nodeIdentifier = null;
     static volatile boolean verbose = false;
 
-    boolean isConnected = false;
+    private boolean isConnected = false;
 
     public static void main(final String args[]) {
         final String number = args[0];
@@ -103,8 +103,7 @@ public class JavaErlang {
     }
 
     public JavaErlang(final String id) {
-        toErlangMap = new HashMap<RefEqualsObject, OtpErlangObject>();
-        fromErlangMap = new HashMap<OtpErlangObject, Object>();
+        typeMapper = new ErlangTypeMapper();
         accToErlangMap = new HashMap<Object, OtpErlangObject>();
         accFromErlangMap = new HashMap<OtpErlangObject, Object>();
         threadMap = new HashMap<OtpErlangObject, ThreadMsgHandler>();
@@ -206,8 +205,7 @@ public class JavaErlang {
             throws Exception {
         if (tag.equals("reset")) {
             objCounter = 0;
-            toErlangMap = new HashMap<RefEqualsObject, OtpErlangObject>();
-            fromErlangMap = new HashMap<OtpErlangObject, Object>();
+            typeMapper.reset();
             for (final ThreadMsgHandler th : threadMap.values()) {
                 stop_thread(th, replyPid);
             }
@@ -352,7 +350,7 @@ public class JavaErlang {
             } else if (arity == 3) {
                 final String tag = ((OtpErlangAtom) t.elementAt(0)).atomValue();
                 if (tag.equals("object")) {
-                    final Object result = fromErlangMap.get(t);
+                    final Object result = typeMapper.getFrom(t);
                     if (result == null) {
                         if (verbose) {
                             System.err.println("\rTranslating " + value);
@@ -669,7 +667,7 @@ public class JavaErlang {
         }
 
         final RefEqualsObject obj_key = new RefEqualsObject(obj);
-        final OtpErlangObject oldValue = toErlangMap.get(obj_key);
+        final OtpErlangObject oldValue = typeMapper.getTo(obj_key);
         if (oldValue != null) {
             return oldValue;
         }
@@ -677,8 +675,8 @@ public class JavaErlang {
         final IntKey key = new IntKey(objCounter++);
         final OtpErlangObject erlangKey = makeErlangKey("object", key,
                 nodeIdentifier);
-        toErlangMap.put(obj_key, erlangKey);
-        fromErlangMap.put(erlangKey, obj);
+        typeMapper.putTo(obj_key, erlangKey);
+        typeMapper.putFrom(erlangKey, obj);
         return erlangKey;
     }
 
@@ -796,9 +794,9 @@ public class JavaErlang {
     }
 
     OtpErlangObject free(final OtpErlangObject arg) {
-        final Object object = fromErlangMap.remove(arg);
+        final Object object = typeMapper.removeFrom(arg);
         final RefEqualsObject obj_key = new RefEqualsObject(object);
-        final OtpErlangObject oldValue = toErlangMap.remove(obj_key);
+        final OtpErlangObject oldValue = typeMapper.removeTo(obj_key);
         return map_to_erlang_void();
     }
 
@@ -829,7 +827,7 @@ public class JavaErlang {
 
     OtpErlangObject proxy_reply(final OtpErlangObject cmd) throws Exception {
         final OtpErlangTuple t = (OtpErlangTuple) cmd;
-        final InvHandler handler = (InvHandler) fromErlangMap.get(t
+        final InvHandler handler = (InvHandler) typeMapper.getFrom(t
                 .elementAt(0));
         handler.setAnswer(t.elementAt(1));
         return new OtpErlangAtom("ok");
@@ -1285,5 +1283,9 @@ public class JavaErlang {
         }
         System.err.println("Cannot return non-Erlang/non-Exception " + obj);
         throw new Exception();
+    }
+
+    public ErlangTypeMapper getTypeMapper() {
+        return typeMapper;
     }
 }
